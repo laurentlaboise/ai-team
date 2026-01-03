@@ -1,21 +1,25 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  ShieldCheck, 
-  Activity, 
-  MessageSquare, 
-  Cpu, 
-  AlertTriangle, 
+import {
+  ShieldCheck,
+  Activity,
+  MessageSquare,
+  Cpu,
+  AlertTriangle,
   Send,
   Zap,
   LayoutDashboard,
   Settings,
-  Eye
+  Eye,
+  Network
 } from 'lucide-react';
 import { Agent, Message, SystemMetrics, AgentStatus } from './types';
 import { INITIAL_AGENTS, INITIAL_METRICS, DEPARTMENTS } from './constants';
 import { sendMessageToAlex, resolveConflict } from './services/geminiService';
 import { LayerVisualizer } from './components/LayerVisualizer';
 import { AgentSwarm } from './components/AgentSwarm';
+import { DepartmentView } from './components/DepartmentView';
+import { AgentNetworkGraph } from './components/AgentNetworkGraph';
+import { workflowEngine, WorkflowTriggers } from './services/workflowEngine';
 
 const App: React.FC = () => {
   // Application State
@@ -32,8 +36,17 @@ const App: React.FC = () => {
   ]);
   const [inputText, setInputText] = useState('');
   const [isThinking, setIsThinking] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'agents' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'agents' | 'network' | 'departments'>('dashboard');
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  const [activeWorkflows, setActiveWorkflows] = useState(0);
+
+  // Subscribe to workflow events
+  useEffect(() => {
+    const unsubscribe = workflowEngine.getEventBus().subscribe('*', () => {
+      setActiveWorkflows(workflowEngine.getActiveWorkflows().length);
+    });
+    return unsubscribe;
+  }, []);
 
   // Scroll chat to bottom
   useEffect(() => {
@@ -139,23 +152,33 @@ const App: React.FC = () => {
         </div>
         
         <div className="flex flex-col gap-8 w-full">
-            <button 
+            <button
                 onClick={() => setActiveTab('dashboard')}
                 className={`p-3 w-full flex justify-center transition-all border-l-2 ${activeTab === 'dashboard' ? 'border-indigo-500 text-white bg-white/5' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+                title="Dashboard"
             >
                 <LayoutDashboard size={24} />
             </button>
-            <button 
-                 onClick={() => setActiveTab('agents')}
-                 className={`p-3 w-full flex justify-center transition-all border-l-2 ${activeTab === 'agents' ? 'border-indigo-500 text-white bg-white/5' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+            <button
+                onClick={() => setActiveTab('departments')}
+                className={`p-3 w-full flex justify-center transition-all border-l-2 ${activeTab === 'departments' ? 'border-indigo-500 text-white bg-white/5' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+                title="Departments (13)"
             >
                 <Eye size={24} />
             </button>
-             <button 
-                 onClick={() => setActiveTab('settings')}
-                 className={`p-3 w-full flex justify-center transition-all border-l-2 ${activeTab === 'settings' ? 'border-indigo-500 text-white bg-white/5' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+            <button
+                onClick={() => setActiveTab('network')}
+                className={`p-3 w-full flex justify-center transition-all border-l-2 ${activeTab === 'network' ? 'border-indigo-500 text-white bg-white/5' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+                title="Network Graph"
             >
-                <Settings size={24} />
+                <Network size={24} />
+            </button>
+            <button
+                onClick={() => setActiveTab('agents')}
+                className={`p-3 w-full flex justify-center transition-all border-l-2 ${activeTab === 'agents' ? 'border-indigo-500 text-white bg-white/5' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+                title="Agent Swarm"
+            >
+                <Activity size={24} />
             </button>
         </div>
 
@@ -172,10 +195,13 @@ const App: React.FC = () => {
             <div className="flex items-center gap-4">
                 <h1 className="text-xl font-bold tracking-tight text-white">ALEX <span className="text-slate-500 font-light">| Overseer & Conscious Mirror</span></h1>
                 <span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 text-xs font-mono border border-indigo-500/30">
-                    v2.5.0-Pro
+                    2026 Blueprint
+                </span>
+                <span className="text-xs text-slate-500">
+                    68 Agents • 13 Departments
                 </span>
             </div>
-            
+
             <div className="flex items-center gap-6">
                 <div className="flex items-center gap-2 text-sm text-slate-400">
                     <ShieldCheck size={16} className="text-emerald-400" />
@@ -183,7 +209,11 @@ const App: React.FC = () => {
                 </div>
                 <div className="flex items-center gap-2 text-sm text-slate-400">
                     <Activity size={16} className="text-indigo-400" />
-                    <span>Evolution: <span className="text-white">{metrics.evolutionStage}</span></span>
+                    <span>Active: <span className="text-white font-mono">{agents.filter(a => a.status === AgentStatus.Working).length}</span></span>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-slate-400">
+                    <Zap size={16} className="text-purple-400" />
+                    <span>Workflows: <span className="text-white font-mono">{activeWorkflows}</span></span>
                 </div>
                 <button 
                     onClick={handleInjectConflict}
@@ -195,10 +225,11 @@ const App: React.FC = () => {
             </div>
         </header>
 
-        {/* Dashboard View */}
+        {/* Main Content Area */}
         <div className="flex-1 flex overflow-hidden">
-            
-            {/* Left/Center: Chat Interface */}
+
+            {/* Dashboard View - Chat Interface */}
+            {activeTab === 'dashboard' && (
             <div className="flex-1 flex flex-col min-w-0 max-w-4xl mx-auto w-full border-r border-slate-800/50">
                 <div 
                     ref={chatContainerRef}
@@ -290,11 +321,37 @@ const App: React.FC = () => {
                     </div>
                 </div>
             </div>
+            )}
 
-            {/* Right Sidebar: Visualizations */}
-            <div className="w-80 border-l border-slate-800 bg-alex-bg/50 p-6 flex flex-col gap-6 overflow-y-auto hidden xl:flex">
-                <LayerVisualizer stability={metrics.layerStability} />
+            {/* Departments View */}
+            {activeTab === 'departments' && (
+            <div className="flex-1 p-6 overflow-hidden">
+                <DepartmentView departments={DEPARTMENTS} agents={agents} />
+            </div>
+            )}
+
+            {/* Network View */}
+            {activeTab === 'network' && (
+            <div className="flex-1 p-6 overflow-y-auto">
+                <div className="max-w-4xl mx-auto space-y-6">
+                    <AgentNetworkGraph agents={agents} activeWorkflows={activeWorkflows} />
+                    <LayerVisualizer stability={metrics.layerStability} />
+                </div>
+            </div>
+            )}
+
+            {/* Agent Swarm View */}
+            {activeTab === 'agents' && (
+            <div className="flex-1 p-6 overflow-y-auto">
                 <AgentSwarm agents={agents} />
+            </div>
+            )}
+
+            {/* Right Sidebar: Visualizations (only show on dashboard) */}
+            {activeTab === 'dashboard' && (
+            <div className="w-80 border-l border-slate-800 bg-alex-bg/50 p-6 flex flex-col gap-6 overflow-y-auto hidden xl:flex">
+                <AgentNetworkGraph agents={agents} activeWorkflows={activeWorkflows} />
+                <LayerVisualizer stability={metrics.layerStability} />
                 
                 {/* Mini System Log */}
                 <div className="glass-panel p-4 rounded-xl flex-1">
@@ -308,6 +365,7 @@ const App: React.FC = () => {
                      </div>
                 </div>
             </div>
+            )}
         </div>
       </main>
     </div>
