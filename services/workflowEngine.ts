@@ -334,7 +334,7 @@ export class WorkflowEngine {
     name: string;
     description: string;
     coordinator: string;
-    steps: Omit<WorkflowStep, 'output'>[];
+    steps: WorkflowStep[];
   }): Workflow {
     const workflowId = `wf-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
